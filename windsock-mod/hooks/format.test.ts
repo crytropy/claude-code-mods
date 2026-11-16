@@ -14,6 +14,7 @@ import {
   mmss,
   modelWeekly,
   percentText,
+  prPage,
   prStatus,
   prText,
   shortTokens,
@@ -161,6 +162,12 @@ test('just pushed: GitHub has not worked the pull request out yet, so it shows a
 
   // No checks in yet, mergeability not worked out.
   expect(of({ ...view, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [] })).toEqual({ kind: 'running', number: 12, url })
+  // Mergeable but no checks yet: just pushed, its checks are not in yet; later, it has none.
+  const clean = JSON.stringify({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [] })
+  expect(prStatus(clean, true)).toEqual({ kind: 'running', number: 12, url })
+  expect(prStatus(clean)).toEqual({ kind: 'ready', number: 12, url })
+  const passed = JSON.stringify({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ __typename: 'CheckRun', status: 'COMPLETED', conclusion: 'SUCCESS' }] })
+  expect(prStatus(passed, true)).toEqual({ kind: 'ready', number: 12, url })
   expect(of({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [run('COMPLETED', 'SUCCESS')] })).toEqual({ kind: 'running', number: 12, url })
   // A failed check still draws nothing, worked out or not.
   expect(of({ ...view, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [run('COMPLETED', 'FAILURE')] })).toBeNull()
@@ -186,4 +193,13 @@ test('gh failing for want of a pull request, not for a moment', async () => {
   expect(hasNoPr('To get started with GitHub CLI, please run:  gh auth login')).toBe(true)
   expect(hasNoPr('error connecting to api.github.com')).toBe(false)
   expect(hasNoPr('HTTP 502: Bad Gateway')).toBe(false)
+})
+
+test('a pull request page and whether it is still open', async () => {
+  const url = 'https://github.com/acme/app/pull/12'
+  expect(prPage(JSON.stringify({ number: 12, url, state: 'OPEN', isDraft: true }))).toEqual({ url, isOpen: true })
+  expect(prPage(JSON.stringify({ number: 12, url, state: 'MERGED' }))).toEqual({ url, isOpen: false })
+  expect(prPage(JSON.stringify({ number: 12, url, state: 'CLOSED' }))).toEqual({ url, isOpen: false })
+  expect(prPage(JSON.stringify({ url: 'javascript:alert(1)', state: 'OPEN' }))).toBeNull()
+  expect(prPage('no pull requests found')).toBeNull()
 })

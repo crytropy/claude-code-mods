@@ -17,6 +17,7 @@ import {
   mmss,
   modelWeekly,
   percentText,
+  prPage,
   prStatus,
   prText,
   shortTokens,
@@ -41,12 +42,15 @@ const PR_IDLE_MS = 5 * 60 * 1000
 const PR_TIMEOUT_MS = 15 * 1000
 // After a push the clock asks each minute for a while, till the checks are in.
 const PR_PUSHED_MS = 5 * 60 * 1000
+// Open pull requests of this session's branches kept on the band after the branch moves on.
+const HELD_MAX = 5
 
 const reading = atom({ plugin: 'windsock-mod-ultra', key: 'reading' } as const, null as Reading | null)
 const lastSentAt = atom({ plugin: 'windsock-mod-ultra', key: 'lastSentAt' } as const, null as Stamp)
 const warnedFor = atom({ plugin: 'windsock-mod-ultra', key: 'warnedFor' } as const, null as Stamp)
 const history = atom({ plugin: 'windsock-mod-ultra', key: 'history' } as const, [] as Point[])
-const pr = atom({ plugin: 'windsock-mod-ultra', key: 'pr' } as const, null as Pr | null)
+const prs = atom({ plugin: 'windsock-mod-ultra', key: 'prs' } as const, [] as Pr[])
+const held = atom({ plugin: 'windsock-mod-ultra', key: 'held' } as const, [] as string[])
 
 /** A piece of the usage row: its text and how it is painted. */
 type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
@@ -105,31 +109,75 @@ async function fetchFable($: EngineInterface): Promise<void> {
 let prFetchedAt: number | null = null
 let pushedAt: number | null = null
 
-// The current branch's pull request, asked of `gh`: a push asks at once; a turn asks again
-// after PR_EVERY_MS; the clock after PR_IDLE_MS, or after PR_EVERY_MS while its checks run
-// and for PR_PUSHED_MS after a push.
+type View = { body: string } | 'none' | 'failed'
+
+// `gh pr view` for the current branch, or for one pull request by its page: what it printed,
+// 'none' with no pull request to show, 'failed' when the network or GitHub failed for a moment.
+async function viewPr($: EngineInterface, url?: string): Promise<View> {
+  const argv = url === undefined ? PR_ARGV : [...PR_ARGV.slice(0, 3), url, ...PR_ARGV.slice(3)]
+  try {
+    const { exitCode, stdout, stderr } = await $.process.run(argv, { timeoutMs: PR_TIMEOUT_MS })
+    if (exitCode === 0) return { body: stdout }
+    // No pull request for the branch, no repository, not signed in: nothing to draw.
+    return hasNoPr(stderr) ? 'none' : 'failed'
+  } catch {
+    // `gh` is not installed or did not answer
+    return 'failed'
+  }
+}
+
+// The current branch's pull request, then the other open ones this session's branches had,
+// asked of `gh`: a push asks at once; a turn asks again after PR_EVERY_MS; the clock after
+// PR_IDLE_MS, or after PR_EVERY_MS while checks run and for PR_PUSHED_MS after a push.
 async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): Promise<void> {
   const now = await $.clock.now()
   if (isPushed) pushedAt = now
+  const last = await read($, prs)
   if (prFetchedAt !== null && !isPushed) {
-    const isSoon =
-      isTurn || (await read($, pr))?.kind === 'running' || (pushedAt !== null && now - pushedAt < PR_PUSHED_MS)
+    const isSoon = isTurn || last.some(p => p.kind === 'running') || (pushedAt !== null && now - pushedAt < PR_PUSHED_MS)
     if (now - prFetchedAt < (isSoon ? PR_EVERY_MS : PR_IDLE_MS)) return
   }
   prFetchedAt = now
-  let next: Pr | null
-  try {
-    const { exitCode, stdout, stderr } = await $.process.run(PR_ARGV, { timeoutMs: PR_TIMEOUT_MS })
-    if (exitCode === 0) next = prStatus(stdout)
-    // No pull request for the branch, no repository, not signed in: nothing to draw.
-    else if (hasNoPr(stderr)) next = null
-    // The network or GitHub failed for a moment: keep the last one.
-    else return
-  } catch {
-    // `gh` is not installed or did not answer: keep the last one
-    return
+
+  const branch = await viewPr($)
+  // The network or GitHub failed for a moment: keep the last ones.
+  if (branch === 'failed') return
+  const next: Pr[] = []
+  let urls = await read($, held)
+  let branchUrl: string | null = null
+  if (branch !== 'none') {
+    const page = prPage(branch.body)
+    if (page !== null) {
+      branchUrl = page.url
+      urls = urls.filter(u => u !== page.url)
+      if (page.isOpen) urls = [page.url, ...urls].slice(0, HELD_MAX)
+    }
+    // A push is the current branch's: its checks may not be in yet.
+    const p = prStatus(branch.body, pushedAt !== null && now - pushedAt < PR_PUSHED_MS)
+    if (p !== null) next.push(p)
   }
-  await update($, pr, () => next)
+
+  // The branch moved on: its pull request stays on the band till it is merged or closed.
+  const kept: string[] = []
+  for (const url of urls) {
+    if (url === branchUrl) {
+      kept.push(url)
+      continue
+    }
+    const view = await viewPr($, url)
+    if (view === 'failed') {
+      kept.push(url)
+      const before = last.find(p => p.url === url)
+      if (before !== undefined) next.push(before)
+      continue
+    }
+    if (view === 'none' || prPage(view.body)?.isOpen !== true) continue
+    kept.push(url)
+    const p = prStatus(view.body)
+    if (p !== null) next.push(p)
+  }
+  await update($, held, () => kept)
+  await update($, prs, () => next)
 }
 
 async function refresh($: EngineInterface): Promise<void> {
@@ -272,15 +320,14 @@ export const register: Register = on => {
       </Text>
     ))
 
-    // Right: the branch's pull request, a link to its page, then the cache countdown.
+    // Right: the pull requests, each a link to its page (the current branch's first), then the cache countdown.
     const side: { text: string; node: unknown }[] = []
-    const open = await read($, pr)
-    if (open !== null) {
+    for (const open of await read($, prs)) {
       const text = prText(open)
       side.push({
         text,
         node: (
-          <Link key="pr" href={open.url}>
+          <Link key={`pr${open.number}`} href={open.url}>
             <Text color={PR_MARK[open.kind].color}>{text}</Text>
           </Link>
         ),
