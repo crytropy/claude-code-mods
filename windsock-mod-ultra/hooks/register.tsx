@@ -9,7 +9,9 @@ import {
   current,
   forecastFor,
   hasLimits,
+  hasNoPr,
   isHot,
+  isPush,
   limitsOf,
   mergeReading,
   mmss,
@@ -37,6 +39,8 @@ const PR_ARGV = ['gh', 'pr', 'view', '--json', 'number,url,state,isDraft,mergeab
 const PR_EVERY_MS = 60 * 1000
 const PR_IDLE_MS = 5 * 60 * 1000
 const PR_TIMEOUT_MS = 15 * 1000
+// After a push the clock asks each minute for a while, till the checks are in.
+const PR_PUSHED_MS = 5 * 60 * 1000
 
 const reading = atom({ plugin: 'windsock-mod-ultra', key: 'reading' } as const, null as Reading | null)
 const lastSentAt = atom({ plugin: 'windsock-mod-ultra', key: 'lastSentAt' } as const, null as Stamp)
@@ -99,21 +103,28 @@ async function fetchFable($: EngineInterface): Promise<void> {
 }
 
 let prFetchedAt: number | null = null
+let pushedAt: number | null = null
 
-// The current branch's pull request, asked of `gh`: a turn asks again after PR_EVERY_MS;
-// the clock after PR_IDLE_MS, or after PR_EVERY_MS while its checks run.
-async function fetchPr($: EngineInterface, isTurn: boolean): Promise<void> {
+// The current branch's pull request, asked of `gh`: a push asks at once; a turn asks again
+// after PR_EVERY_MS; the clock after PR_IDLE_MS, or after PR_EVERY_MS while its checks run
+// and for PR_PUSHED_MS after a push.
+async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): Promise<void> {
   const now = await $.clock.now()
-  if (prFetchedAt !== null) {
-    const isSoon = isTurn || (await read($, pr))?.kind === 'running'
+  if (isPushed) pushedAt = now
+  if (prFetchedAt !== null && !isPushed) {
+    const isSoon =
+      isTurn || (await read($, pr))?.kind === 'running' || (pushedAt !== null && now - pushedAt < PR_PUSHED_MS)
     if (now - prFetchedAt < (isSoon ? PR_EVERY_MS : PR_IDLE_MS)) return
   }
   prFetchedAt = now
   let next: Pr | null
   try {
-    const { exitCode, stdout } = await $.process.run(PR_ARGV, { timeoutMs: PR_TIMEOUT_MS })
+    const { exitCode, stdout, stderr } = await $.process.run(PR_ARGV, { timeoutMs: PR_TIMEOUT_MS })
+    if (exitCode === 0) next = prStatus(stdout)
     // No pull request for the branch, no repository, not signed in: nothing to draw.
-    next = exitCode === 0 ? prStatus(stdout) : null
+    else if (hasNoPr(stderr)) next = null
+    // The network or GitHub failed for a moment: keep the last one.
+    else return
   } catch {
     // `gh` is not installed or did not answer: keep the last one
     return
@@ -185,6 +196,15 @@ export const register: Register = on => {
 
     return yield* next(e)
   })
+
+  // A push, or a pull request just opened: ask `gh` at once, so the band shows its checks starting.
+  on('tool.call', async ($, e, next) => {
+    const result = await next(e)
+    if ((e.tool === 'Bash' || e.tool === 'PowerShell') && result.deny === undefined && isPush(e.command)) {
+      await fetchPr($, true, true)
+    }
+    return result
+  }).catch(($, e, next) => next(e))
 
   // The engine measures after each main-thread turn and when a window moves a point.
   on('session.measure', async ($, e, next) => {

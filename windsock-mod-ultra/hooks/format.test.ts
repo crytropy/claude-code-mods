@@ -6,8 +6,10 @@ import {
   current,
   forecastFor,
   hasLimits,
+  hasNoPr,
   HISTORY,
   isHot,
+  isPush,
   mergeReading,
   mmss,
   modelWeekly,
@@ -139,4 +141,39 @@ test('pull request from gh: checks running, ready to merge, merged, nothing othe
   expect(prText({ kind: 'running', number: 12, url })).toBe('◐ PR #12')
   expect(prText({ kind: 'ready', number: 12, url })).toBe('✓ PR #12')
   expect(prText({ kind: 'merged', number: 7, url })).toBe('● PR #7')
+})
+
+test('just pushed: GitHub has not worked the pull request out yet, so it shows as running', async () => {
+  const url = 'https://github.com/acme/app/pull/12'
+  const view = { number: 12, url, state: 'OPEN', isDraft: false }
+  const run = (status: string, conclusion: string) => ({ __typename: 'CheckRun', status, conclusion })
+  const of = (pr: object) => prStatus(JSON.stringify(pr))
+
+  // No checks in yet, mergeability not worked out.
+  expect(of({ ...view, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [] })).toEqual({ kind: 'running', number: 12, url })
+  expect(of({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [run('COMPLETED', 'SUCCESS')] })).toEqual({ kind: 'running', number: 12, url })
+  // A failed check still draws nothing, worked out or not.
+  expect(of({ ...view, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [run('COMPLETED', 'FAILURE')] })).toBeNull()
+  // Still a draft: nothing.
+  expect(of({ ...view, isDraft: true, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [] })).toBeNull()
+})
+
+test('a push or a new pull request is told from other commands', async () => {
+  expect(isPush('git push')).toBe(true)
+  expect(isPush('git push -u origin feat/x')).toBe(true)
+  expect(isPush('cd app && git -C . push --force-with-lease')).toBe(true)
+  expect(isPush('gh pr create --fill')).toBe(true)
+  expect(isPush('gh pr ready 12')).toBe(true)
+  expect(isPush('git status')).toBe(false)
+  expect(isPush('git log | grep push')).toBe(false)
+  expect(isPush('gh pr view')).toBe(false)
+})
+
+test('gh failing for want of a pull request, not for a moment', async () => {
+  expect(hasNoPr('no pull requests found for branch "main"')).toBe(true)
+  expect(hasNoPr('fatal: not a git repository (or any of the parent directories): .git')).toBe(true)
+  expect(hasNoPr('none of the git remotes configured for this repository point to a known GitHub host')).toBe(true)
+  expect(hasNoPr('To get started with GitHub CLI, please run:  gh auth login')).toBe(true)
+  expect(hasNoPr('error connecting to api.github.com')).toBe(false)
+  expect(hasNoPr('HTTP 502: Bad Gateway')).toBe(false)
 })
