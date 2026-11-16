@@ -410,10 +410,13 @@ test('a push asks gh at once and shows the pull request running; gh failing for 
   const view = { number: 12, url: 'https://github.com/acme/app/pull/12', state: 'OPEN', isDraft: false }
   const noPr = { exitCode: 1, stdout: '', stderr: 'no pull requests found for branch "feat"' }
   let answer = noPr
+  // What `gh pr view <its page>` prints, once the branch has moved on.
+  let byPage = noPr
   const ran: string[][] = []
   on('process.run', (_$, e: any) => {
     ran.push([...e.argv])
-    return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } } as any
+    const a = e.argv[3] === view.url ? byPage : answer
+    return { value: { ...a, isStdoutTruncated: false, isStderrTruncated: false } } as any
   })
   on('tool.call', () => ({ result: {} }) as any)
   on('ui.render', ($, e) => {
@@ -451,18 +454,103 @@ test('a push asks gh at once and shows the pull request running; gh failing for 
   expect(ran.length).toBe(3)
   expect((await mark())?.text).toBe('◐ PR #12')
 
-  // Merged and gone: the branch has no pull request again.
+  // Merged and the branch gone: asked by its page, it is merged, so it leaves the band.
   answer = noPr
+  byPage = { exitCode: 0, stderr: '', stdout: JSON.stringify({ ...view, state: 'MERGED' }) }
   await clock.advance(MIN)
-  expect(ran.length).toBe(4)
+  expect(ran.length).toBe(5)
+  expect(ran[4][3]).toBe(view.url)
   expect(await mark()).toBeUndefined()
 
   // Pushed again with PowerShell: asked at once, not a minute on.
   answer = { exitCode: 0, stderr: '', stdout: JSON.stringify({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED', conclusion: '' }] }) }
   await clock.advance(5_000)
   await $.tool.call({ tool: 'PowerShell', command: 'git push origin feat' } as any)
-  expect(ran.length).toBe(5)
+  expect(ran.length).toBe(6)
   expect((await mark())?.text).toBe('◐ PR #12')
+
+  // Mergeable with no checks: within five minutes of the push its checks may not be in yet.
+  answer = { exitCode: 0, stderr: '', stdout: JSON.stringify({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [] }) }
+  await clock.advance(MIN)
+  expect(ran.length).toBe(7)
+  expect((await mark())?.text).toBe('◐ PR #12')
+
+  // Five minutes on and still none: it has no checks, so it is ready.
+  await clock.advance(4 * MIN + 1000)
+  expect((await mark())?.text).toBe('✓ PR #12')
+})
+
+test('the branch moves on: its open pull request stays after the new branch pull request, till it is merged', async ($, on) => {
+  const clock = mock.clock(on, { now: T0 })
+  mock.store(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'session-9' }) as any)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 12 }] } }))
+  const page = (n: number) => `https://github.com/acme/app/pull/${n}`
+  const body = (n: number, more: object = {}) => ({
+    exitCode: 0,
+    stderr: '',
+    stdout: JSON.stringify({ number: n, url: page(n), state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [], ...more }),
+  })
+  const running = { statusCheckRollup: [{ __typename: 'CheckRun', status: 'IN_PROGRESS', conclusion: '' }] }
+  // What `gh pr view` prints for the branch, and for a pull request asked by its page.
+  let branch = body(12)
+  const pages: Record<string, ReturnType<typeof body> | { exitCode: number; stdout: string; stderr: string }> = {}
+  const ran: string[][] = []
+  on('process.run', (_$, e: any) => {
+    ran.push([...e.argv])
+    const a = e.argv[3].startsWith('https://') ? pages[e.argv[3]] : branch
+    return { value: { ...a, isStdoutTruncated: false, isStderrTruncated: false } } as any
+  })
+  on('tool.call', () => ({ result: {} }) as any)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>beneath</Text>
+  })
+  on('ui.invalidate', () => ({ value: undefined }) as any)
+  const marks = async () => {
+    const ui = await $.ui.mount(band('terminal', 160))
+    const tree = JSON.stringify(await ui.drawn())
+    await ui.unmount()
+    return tree.match(/[◐✓●] PR #\d+/g) ?? []
+  }
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(ran.length).toBe(1)
+  expect(await marks()).toEqual(['✓ PR #12'])
+
+  // A new branch with no pull request yet: #12, still open, is asked by its page and stays.
+  branch = { exitCode: 1, stdout: '', stderr: 'no pull requests found for branch "next"' }
+  pages[page(12)] = body(12)
+  await clock.advance(5 * MIN)
+  expect(ran.length).toBe(3)
+  expect(ran[2].slice(0, 4)).toEqual(['gh', 'pr', 'view', page(12)])
+  expect(await marks()).toEqual(['✓ PR #12'])
+
+  // The new branch's pull request comes first, #12 after it.
+  branch = body(13, running)
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(ran.length).toBe(5)
+  expect(await marks()).toEqual(['◐ PR #13', '✓ PR #12'])
+  const ui = await $.ui.mount(band('terminal', 160))
+  const tree = JSON.stringify(await ui.drawn())
+  expect(tree).toContain(page(13))
+  expect(tree).toContain(page(12))
+  await ui.unmount()
+
+  // GitHub fails for a moment on #12: it keeps its last mark.
+  pages[page(12)] = { exitCode: 1, stdout: '', stderr: 'HTTP 502: Bad Gateway (https://api.github.com/graphql)' }
+  await clock.advance(MIN)
+  expect(ran.length).toBe(7)
+  expect(await marks()).toEqual(['◐ PR #13', '✓ PR #12'])
+
+  // #12 merged: it leaves the band and is not asked again.
+  pages[page(12)] = body(12, { state: 'MERGED' })
+  await clock.advance(MIN)
+  expect(ran.length).toBe(9)
+  expect(await marks()).toEqual(['◐ PR #13'])
+  await clock.advance(MIN)
+  expect(ran.length).toBe(10)
 })
 
 test('no pull request for the branch: no pull request on the band', async ($, on) => {

@@ -161,11 +161,13 @@ const BLOCKED = ['BLOCKED', 'DIRTY', 'DRAFT', 'BEHIND']
  * number,url,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup`:
  * merged, its checks still running, or its checks passed and mergeable (a pull
  * request with no checks has none failing). Just pushed, while GitHub has not
- * yet worked out whether it merges (`UNKNOWN`), it counts as running too.
+ * yet worked out whether it merges (`UNKNOWN`), it counts as running too; so
+ * does one `isJustPushed` with no checks yet, as GitHub takes a few seconds to
+ * hang a new pull request's checks on it.
  * Null for any other state (a draft, a failed check, a conflict, closed) and
  * for a body that is no pull request.
  */
-export function prStatus(body: string): Pr | null {
+export function prStatus(body: string, isJustPushed = false): Pr | null {
   let pr: any
   try {
     pr = JSON.parse(body)
@@ -183,11 +185,29 @@ export function prStatus(body: string): Pr | null {
   const isRunning = (c: any) => (typeof c.status === 'string' ? c.status !== 'COMPLETED' : c.state === 'PENDING' || c.state === 'EXPECTED')
   const hasPassed = (c: any) => PASSED.includes(typeof c.status === 'string' ? c.conclusion : c.state)
   if (checks.some(isRunning)) return { kind: 'running', number, url }
+  // Just pushed or opened: no checks yet may be checks not in yet, not a pull request without any.
+  if (checks.length === 0 && isJustPushed) return { kind: 'running', number, url }
   if (!checks.every(hasPassed)) return null
   // Just pushed: GitHub is still working out the new head, and its checks may not be in yet.
   if (pr.mergeable === 'UNKNOWN' || pr.mergeStateStatus === 'UNKNOWN') return { kind: 'running', number, url }
   if (pr.mergeable !== 'MERGEABLE' || BLOCKED.includes(pr.mergeStateStatus)) return null
   return { kind: 'ready', number, url }
+}
+
+/**
+ * The pull request's page and whether it is still open (a draft is), from `gh
+ * pr view --json ...`: null for a body that is no pull request.
+ */
+export function prPage(body: string): { url: string; isOpen: boolean } | null {
+  let pr: any
+  try {
+    pr = JSON.parse(body)
+  } catch {
+    return null
+  }
+  if (pr === null || typeof pr !== 'object') return null
+  if (typeof pr.url !== 'string' || !pr.url.startsWith('https://')) return null
+  return { url: pr.url, isOpen: pr.state === 'OPEN' }
 }
 
 /**

@@ -24,7 +24,7 @@ export type Point = {
 /** Milliseconds since the epoch, or null before the first main-loop request. */
 export type Stamp = number | null
 
-/** The current branch's pull request, in one of the three states the band draws. */
+/** A pull request, in one of the three states the band draws. */
 export type Pr = {
   /** Its checks are still running; they passed and it can be merged; it is merged. */
   kind: 'running' | 'ready' | 'merged'
@@ -43,8 +43,10 @@ declare module 'claude-code' {
       lastSentAt: Stamp
       /** The `lastSentAt` the five-minute warning was already raised for. */
       warnedFor: Stamp
-      /** The current branch's pull request; null with none to draw. */
-      pr: Pr | null
+      /** The pull requests to draw: the current branch's first, then the others still open. */
+      prs: Pr[]
+      /** Pages of the open pull requests this session's branches had, newest first. */
+      held: string[]
     }
   }
 }
