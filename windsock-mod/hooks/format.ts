@@ -160,8 +160,10 @@ const BLOCKED = ['BLOCKED', 'DIRTY', 'DRAFT', 'BEHIND']
  * The current branch's pull request from `gh pr view --json
  * number,url,state,isDraft,mergeable,mergeStateStatus,statusCheckRollup`:
  * merged, its checks still running, or its checks passed and mergeable (a pull
- * request with no checks has none failing). Null for any other state (a draft,
- * a failed check, a conflict, closed) and for a body that is no pull request.
+ * request with no checks has none failing). Just pushed, while GitHub has not
+ * yet worked out whether it merges (`UNKNOWN`), it counts as running too.
+ * Null for any other state (a draft, a failed check, a conflict, closed) and
+ * for a body that is no pull request.
  */
 export function prStatus(body: string): Pr | null {
   let pr: any
@@ -182,8 +184,24 @@ export function prStatus(body: string): Pr | null {
   const hasPassed = (c: any) => PASSED.includes(typeof c.status === 'string' ? c.conclusion : c.state)
   if (checks.some(isRunning)) return { kind: 'running', number, url }
   if (!checks.every(hasPassed)) return null
+  // Just pushed: GitHub is still working out the new head, and its checks may not be in yet.
+  if (pr.mergeable === 'UNKNOWN' || pr.mergeStateStatus === 'UNKNOWN') return { kind: 'running', number, url }
   if (pr.mergeable !== 'MERGEABLE' || BLOCKED.includes(pr.mergeStateStatus)) return null
   return { kind: 'ready', number, url }
+}
+
+/**
+ * Whether `gh pr view` failed because there is no pull request to show (none
+ * for the branch, no repository, no GitHub remote, not signed in), rather than
+ * for a moment (the network, GitHub itself).
+ */
+export function hasNoPr(stderr: string): boolean {
+  return /no pull requests found|not a git repository|no git remotes|known GitHub host|gh auth login/i.test(stderr)
+}
+
+/** Whether a shell command pushes a branch or opens its pull request. */
+export function isPush(command: string): boolean {
+  return /\bgit\b[^\n;|&]*\bpush\b|\bgh\s+pr\s+(create|ready|reopen)\b/.test(command)
 }
 
 /** Terminal cells a text takes: CJK and full-width characters take two. */

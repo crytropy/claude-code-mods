@@ -27,13 +27,15 @@ Context 的天氣顯示參考 Anthropic 的 [Token Weather](https://github.com/a
 
 | 圖示 | 意思 |
 |---|---|
-| `◐ PR #12`（黃） | CI 正在跑 |
+| `◐ PR #12`（黃） | CI 正在跑，或剛推送、CI 還沒開始、GitHub 還在判斷能不能合併 |
 | `✓ PR #12`（綠） | CI 過了，可以合併。PR 沒有設任何 CI 時，能合併就算過 |
 | `● PR #12`（紫） | 已合併 |
 
 `PR #12` 是連結，點了會開 PR 的網頁（終端機通常要按住 Ctrl 或 Cmd 再點）。不支援連結的終端機會把網址直接印在後面。
 
 狀態是用本機的 [`gh`](https://cli.github.com/) 讀的（`gh pr view`），所以要先裝好 `gh` 並登入；沒裝或沒登入，這一段就不顯示。每輪對話結束時會讀一次（最多每分鐘一次）；閒置時 CI 還在跑就每分鐘讀一次，否則每 5 分鐘讀一次。
+
+Claude 用 Bash 或 PowerShell 跑完 `git push`、`gh pr create`、`gh pr ready`、`gh pr reopen` 後會馬上讀一次，之後 5 分鐘內每分鐘讀一次，等 CI 開始跑。`gh` 一時連不上（網路、GitHub 暫時出錯）時保留上一次的狀態，不會突然消失。
 
 ## 快取倒數
 

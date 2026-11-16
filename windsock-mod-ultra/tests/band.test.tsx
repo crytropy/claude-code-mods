@@ -401,6 +401,70 @@ test('the branch pull request is a link left of the countdown: checks running, r
   await ui.unmount()
 })
 
+test('a push asks gh at once and shows the pull request running; gh failing for a moment keeps it', async ($, on) => {
+  const clock = mock.clock(on, { now: T0 })
+  mock.store(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'session-8' }) as any)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 12 }] } }))
+  const view = { number: 12, url: 'https://github.com/acme/app/pull/12', state: 'OPEN', isDraft: false }
+  const noPr = { exitCode: 1, stdout: '', stderr: 'no pull requests found for branch "feat"' }
+  let answer = noPr
+  const ran: string[][] = []
+  on('process.run', (_$, e: any) => {
+    ran.push([...e.argv])
+    return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } } as any
+  })
+  on('tool.call', () => ({ result: {} }) as any)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>beneath</Text>
+  })
+  on('ui.invalidate', () => ({ value: undefined }) as any)
+  const mark = async () => {
+    const ui = await $.ui.mount(band('terminal', 120))
+    const m = await ui.find({ type: 'Text', text: /PR #/ })
+    await ui.unmount()
+    return m
+  }
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(ran.length).toBe(1)
+  expect(await mark()).toBeUndefined()
+
+  // Other commands ask nothing.
+  await $.tool.call({ tool: 'Bash', command: 'git status' })
+  expect(ran.length).toBe(1)
+
+  // Opened and pushed seconds later: GitHub has no checks and no mergeability yet.
+  answer = { exitCode: 0, stderr: '', stdout: JSON.stringify({ ...view, mergeable: 'UNKNOWN', mergeStateStatus: 'UNKNOWN', statusCheckRollup: [] }) }
+  await clock.advance(5_000)
+  await $.tool.call({ tool: 'Bash', command: 'gh pr create --fill' })
+  expect(ran.length).toBe(2)
+  let m = await mark()
+  expect(m?.text).toBe('◐ PR #12')
+  expect(m?.props.color).toBe('warning')
+
+  // GitHub fails for a moment: the mark stays.
+  answer = { exitCode: 1, stdout: '', stderr: 'HTTP 502: Bad Gateway (https://api.github.com/graphql)' }
+  await clock.advance(MIN)
+  expect(ran.length).toBe(3)
+  expect((await mark())?.text).toBe('◐ PR #12')
+
+  // Merged and gone: the branch has no pull request again.
+  answer = noPr
+  await clock.advance(MIN)
+  expect(ran.length).toBe(4)
+  expect(await mark()).toBeUndefined()
+
+  // Pushed again with PowerShell: asked at once, not a minute on.
+  answer = { exitCode: 0, stderr: '', stdout: JSON.stringify({ ...view, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [{ __typename: 'CheckRun', status: 'QUEUED', conclusion: '' }] }) }
+  await clock.advance(5_000)
+  await $.tool.call({ tool: 'PowerShell', command: 'git push origin feat' } as any)
+  expect(ran.length).toBe(5)
+  expect((await mark())?.text).toBe('◐ PR #12')
+})
+
 test('no pull request for the branch: no pull request on the band', async ($, on) => {
   mock.clock(on, { now: T0 })
   mock.store(on)
