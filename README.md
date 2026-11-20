@@ -125,24 +125,17 @@ Ultra 帳號在驗證完成前，用量裡還是會有 5 小時的數字；`wind
 
 這段設定只對本機 session 有效。雲端 session 不會安裝 repo 設定或使用者設定裡的外掛，見官方文件 [What carries over from your setup](https://code.claude.com/docs/en/cloud-environments#what-carries-over-from-your-setup)。
 
-## 雲端 session（未驗證）
+## 更新日誌
 
-> ⚠️ 這個做法還沒實際驗證過，雲端介面也不一定會畫出輸入框上方的資訊列。
-
-雲端 session 跑在雲端環境（environment）裡，環境和 repo 是分開選的。設定一次環境，用這個環境開的雲端 session 都會套用，不管開在哪個 repo。在 claude.ai/code 的環境設定裡：
-
-1. **Setup script** 加上：
-
-   ```bash
-   git clone --depth 1 https://github.com/crytropy/windsock-mod /opt/windsock-mod
-   ```
-
-2. **Environment variables** 加上：
-
-   ```
-   CLAUDE_CODE_PLUGIN_DIRS=/opt/windsock-mod/windsock-mod
-   ```
-
-   Ultra 版改成 `CLAUDE_CODE_PLUGIN_DIRS=/opt/windsock-mod/windsock-mod-ultra`。
-
-設定好後開一個新的雲端 session，看輸入框上方有沒有出現資訊列。
+| 版本 | 日期 | 內容 |
+| --- | --- | --- |
+| 0.3.4 | 2026-11-20 | PR 狀態：session 資料夾停在 `main`、在別的 worktree 推送或開 PR 時，PR 也會顯示 |
+| 0.3.3 | 2026-11-18 | PR 狀態：沒掛在分支上（detached HEAD）時，改問指向同一個 commit 的本機分支 |
+| 0.3.2 | 2026-11-16 | PR 狀態：換分支後，還開著的 PR 留在資訊列上；剛推送、還沒有 CI 時不顯示綠色 |
+| 0.3.1 | 2026-11-16 | PR 狀態：推送、開 PR 後馬上讀一次；`gh` 一時失敗時保留上一次的狀態 |
+| 0.3.0 | 2026-11-13 | 加上可點開的 PR 狀態；快取倒數只留時間。11-14 專案從 prompt-band 改名為 windsock-mod |
+| 0.2.0 | 2026-11-12 | 加上 Fable 每週用量，拉開各段的間距 |
+| 0.1.5 | 2026-11-02 | 新增 Ultra 版：沒有 5 小時限制 |
+| 0.1.4 | 2026-11-01 | Context 改用 Token Weather 天氣顯示 |
+| 0.1.3 | 2026-10-18 | 快取過期時只顯示「快取已過期」 |
+| 0.1.2 | 2026-10-17 | 第一版（prompt-band）：左邊是用量（Context、5 小時、每週），右邊是主對話 1 小時快取的倒數 |
