@@ -17,6 +17,7 @@ import {
   modelWeekly,
   percentText,
   prPage,
+  prRefOf,
   prStatus,
   prText,
   shortTokens,
@@ -186,6 +187,22 @@ test('a push or a new pull request is told from other commands', async () => {
   expect(isPush('git status')).toBe(false)
   expect(isPush('git log | grep push')).toBe(false)
   expect(isPush('gh pr view')).toBe(false)
+})
+
+test('the pull request a command touched: its page, else the branch a push went to', async () => {
+  const page = 'https://github.com/acme/app/pull/12'
+  expect(prRefOf({ gitOperation: { pr: { number: 12, url: page, action: 'created' } } })).toBe(page)
+  expect(prRefOf({ gitOperation: { push: { branch: 'feat/x' }, pr: { number: 12, url: page, action: 'ready' } } })).toBe(page)
+  // No page from the engine: the one `gh` printed for that number.
+  expect(prRefOf({ stdout: `Creating pull request\n${page}\n`, gitOperation: { pr: { number: 12, action: 'created' } } })).toBe(page)
+  expect(prRefOf({ stdout: 'https://github.com/acme/app/pull/120\n', gitOperation: { pr: { number: 12, action: 'created' } } })).toBe(null)
+  expect(prRefOf({ gitOperation: { push: { branch: 'feat/x' } } })).toBe('feat/x')
+  // Someone else's pull request, or one that is no longer open: not this session's to keep.
+  expect(prRefOf({ gitOperation: { pr: { number: 12, url: page, action: 'commented' } } })).toBe(null)
+  expect(prRefOf({ gitOperation: { pr: { number: 12, url: page, action: 'merged' } } })).toBe(null)
+  expect(prRefOf({ gitOperation: { commit: { sha: 'abc', kind: 'committed' } } })).toBe(null)
+  expect(prRefOf({ stdout: page })).toBe(null)
+  expect(prRefOf(undefined)).toBe(null)
 })
 
 test('gh failing for want of a pull request, not for a moment', async () => {

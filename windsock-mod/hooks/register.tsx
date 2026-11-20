@@ -20,6 +20,7 @@ import {
   modelWeekly,
   percentText,
   prPage,
+  prRefOf,
   prStatus,
   prText,
   shortTokens,
@@ -113,6 +114,8 @@ async function fetchFable($: EngineInterface): Promise<void> {
 
 let prFetchedAt: number | null = null
 let pushedAt: number | null = null
+// The page of the pull request the last push or `gh pr` went to, when it was not the current branch's.
+let pushedUrl: string | null = null
 
 type View = { body: string } | 'none' | 'failed'
 
@@ -157,7 +160,9 @@ async function viewAtHead($: EngineInterface): Promise<View> {
 // The current branch's pull request, then the other open ones this session's branches had,
 // asked of `gh`: a push asks at once; a turn asks again after PR_EVERY_MS; the clock after
 // PR_IDLE_MS, or after PR_EVERY_MS while checks run and for PR_PUSHED_MS after a push.
-async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): Promise<void> {
+// `touched` is the page or branch a push or `gh pr` went to: it may be another worktree's,
+// not the current branch's, so it is asked by itself and kept with the others.
+async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false, touched: string | null = null): Promise<void> {
   const now = await $.clock.now()
   if (isPushed) pushedAt = now
   const last = await read($, prs)
@@ -172,6 +177,20 @@ async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): P
   if (branch === 'failed') return
   const next: Pr[] = []
   let urls = await read($, held)
+  // What `gh` printed this time, by page, so a pull request is asked once.
+  const seen = new Map<string, View>()
+  if (isPushed) pushedUrl = null
+  if (touched !== null) {
+    const view = await viewPr($, touched)
+    const page = view === 'none' || view === 'failed' ? null : prPage(view.body)
+    const url = page?.url ?? (touched.startsWith('https://') ? touched : null)
+    if (url !== null && (page === null || page.isOpen)) {
+      if (view !== 'none' && view !== 'failed') seen.set(url, view)
+      pushedUrl = url
+      urls = [url, ...urls.filter(u => u !== url)].slice(0, HELD_MAX)
+    }
+  }
+  const isFresh = (url: string) => url === pushedUrl && pushedAt !== null && now - pushedAt < PR_PUSHED_MS
   let branchUrl: string | null = null
   if (branch !== 'none') {
     const page = prPage(branch.body)
@@ -192,7 +211,7 @@ async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): P
       kept.push(url)
       continue
     }
-    const view = await viewPr($, url)
+    const view = seen.get(url) ?? (await viewPr($, url))
     if (view === 'failed') {
       kept.push(url)
       const before = last.find(p => p.url === url)
@@ -201,7 +220,7 @@ async function fetchPr($: EngineInterface, isTurn: boolean, isPushed = false): P
     }
     if (view === 'none' || prPage(view.body)?.isOpen !== true) continue
     kept.push(url)
-    const p = prStatus(view.body)
+    const p = prStatus(view.body, isFresh(url))
     if (p !== null) next.push(p)
   }
   await update($, held, () => kept)
@@ -274,10 +293,12 @@ export const register: Register = on => {
   })
 
   // A push, or a pull request just opened: ask `gh` at once, so the band shows its checks starting.
+  // The engine's reading of the command names the branch or page, which may be another worktree's.
   on('tool.call', async ($, e, next) => {
     const result = await next(e)
-    if ((e.tool === 'Bash' || e.tool === 'PowerShell') && result.deny === undefined && isPush(e.command)) {
-      await fetchPr($, true, true)
+    if ((e.tool === 'Bash' || e.tool === 'PowerShell') && result.deny === undefined) {
+      const touched = prRefOf(result.result)
+      if (touched !== null || isPush(e.command)) await fetchPr($, true, true, touched)
     }
     return result
   }).catch(($, e, next) => next(e))

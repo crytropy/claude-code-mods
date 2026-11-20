@@ -229,6 +229,31 @@ export function isPush(command: string): boolean {
   return /\bgit\b[^\n;|&]*\bpush\b|\bgh\s+pr\s+(create|ready|reopen)\b/.test(command)
 }
 
+// What a command does to a pull request that makes it this session's to keep on the band.
+const OWN_PR_ACTIONS = ['created', 'edited', 'ready', 'draft', 'reopened', 'auto-merge-enabled']
+
+/**
+ * The pull request a Bash or PowerShell command touched, from the engine's
+ * reading of it (`gitOperation`): its page, or else the branch a push went to.
+ * The command may have run in another worktree or off any branch, so the
+ * session folder's own branch does not find it.
+ */
+export function prRefOf(result: unknown): string | null {
+  const r = result as { stdout?: unknown; gitOperation?: { pr?: any; push?: any } } | null | undefined
+  const op = r?.gitOperation
+  if (op === null || typeof op !== 'object') return null
+  const pr = op.pr
+  if (pr !== null && typeof pr === 'object' && OWN_PR_ACTIONS.includes(pr.action)) {
+    if (typeof pr.url === 'string' && pr.url.startsWith('https://')) return pr.url
+    // No page from the engine: the one `gh` printed for that number.
+    const printed = typeof r?.stdout === 'string' ? r.stdout.match(/https:\/\/\S+\/pull\/(\d+)\b/g) : null
+    const page = printed?.find(u => u.endsWith(`/pull/${pr.number}`))
+    if (page !== undefined) return page
+  }
+  const branch = op.push?.branch
+  return typeof branch === 'string' && branch !== '' ? branch : null
+}
+
 /** Terminal cells a text takes: CJK and full-width characters take two. */
 export function cellWidth(text: string): number {
   let width = 0

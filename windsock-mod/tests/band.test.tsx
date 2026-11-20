@@ -553,6 +553,81 @@ test('the branch moves on: its open pull request stays after the new branch pull
   expect(ran.length).toBe(10)
 })
 
+test('pushed or opened from another worktree: the session folder stays on main, the pull request still shows', async ($, on) => {
+  const clock = mock.clock(on, { now: T0 })
+  mock.store(on)
+  on('session.start', (_$, e) => ({ cwd: e.cwd }))
+  on('session.id', () => ({ value: 'session-11' }) as any)
+  on('session.usage', () => ({ value: { startedAt: 0, context: { window: 200000 }, rateLimits: [{ kind: 'seven_day', percentUsed: 12 }] } }))
+  const page = (n: number) => `https://github.com/acme/app/pull/${n}`
+  const body = (n: number, more: object = {}) => ({
+    exitCode: 0,
+    stderr: '',
+    stdout: JSON.stringify({ number: n, url: page(n), state: 'OPEN', isDraft: false, mergeable: 'MERGEABLE', mergeStateStatus: 'CLEAN', statusCheckRollup: [], ...more }),
+  })
+  const none = (ref: string) => ({ exitCode: 1, stdout: '', stderr: `no pull requests found for branch "${ref}"` })
+  // `gh pr view` by branch name or by page; the session folder's own branch is main, with none.
+  const views: Record<string, { exitCode: number; stdout: string; stderr: string }> = {}
+  const ran: string[][] = []
+  on('process.run', (_$, e: any) => {
+    ran.push([...e.argv])
+    const ref = e.argv[3] === '--json' ? 'main' : e.argv[3]
+    return { value: { ...(views[ref] ?? none(ref)), isStdoutTruncated: false, isStderrTruncated: false } } as any
+  })
+  // What the engine reads from each command: the git and gh operations in it.
+  let gitOperation: object | undefined
+  let stdout = ''
+  on('tool.call', () => ({ result: { stdout, stderr: '', interrupted: false, gitOperation } }) as any)
+  on('ui.render', ($, e) => {
+    const { Text } = $.ui.resolve(e)
+    return <Text>beneath</Text>
+  })
+  on('ui.invalidate', () => ({ value: undefined }) as any)
+  const marks = async () => {
+    const ui = await $.ui.mount(band('terminal', 160))
+    const tree = JSON.stringify(await ui.drawn())
+    await ui.unmount()
+    return tree.match(/[◐✓●] PR #\d+/g) ?? []
+  }
+
+  await $.session.start({ cwd: '/', surface: 'desktop', isInteractive: true })
+  expect(await marks()).toEqual([])
+
+  // Pushed from a worktree off any branch, to a branch with an open pull request: asked by that
+  // branch at once, and shown running, since its checks may not be in yet.
+  views['feat/324'] = body(14)
+  views[page(14)] = body(14)
+  gitOperation = { push: { branch: 'feat/324' } }
+  await clock.advance(5_000)
+  await $.tool.call({ tool: 'Bash', command: 'cd ../wt && git push origin HEAD:feat/324' })
+  expect(ran.slice(-2).map(a => a[3])).toEqual(['--json', 'feat/324'])
+  expect(await marks()).toEqual(['◐ PR #14'])
+
+  // The next asks keep it, by its page; once the push is old and no checks came, it is ready.
+  await clock.advance(5 * MIN + 1000)
+  expect(ran.at(-1)?.[3]).toBe(page(14))
+  expect(await marks()).toEqual(['✓ PR #14'])
+
+  // A pull request opened for another branch, its page printed by `gh pr create --head`.
+  views[page(15)] = body(15)
+  gitOperation = { pr: { number: 15, action: 'created' } }
+  stdout = `${page(15)}\n`
+  await $.tool.call({ tool: 'PowerShell', command: 'gh pr create --head feat/325 --fill' } as any)
+  expect(await marks()).toEqual(['◐ PR #15', '✓ PR #14'])
+
+  // Merged: it leaves the band.
+  views[page(14)] = body(14, { state: 'MERGED' })
+  await clock.advance(MIN)
+  expect(await marks()).toEqual(['◐ PR #15'])
+
+  // A comment on someone else's pull request does not bring it to the band.
+  views[page(16)] = body(16)
+  gitOperation = { pr: { number: 16, url: page(16), action: 'commented' } }
+  stdout = ''
+  await $.tool.call({ tool: 'Bash', command: 'gh pr comment 16 --body ok' })
+  expect(ran.some(a => a[3] === page(16))).toBe(false)
+})
+
 test('no pull request for the branch: no pull request on the band', async ($, on) => {
   mock.clock(on, { now: T0 })
   mock.store(on)

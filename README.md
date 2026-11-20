@@ -47,11 +47,20 @@ Context 的天氣顯示參考 Anthropic 的 [Token Weather](https://github.com/a
 
 repo 停在某個 commit、沒掛在任何分支上（detached HEAD）時，`gh pr view` 不知道要問哪個分支。這時會改問「指向同一個 commit 的本機分支」的 PR：用 `git for-each-ref --points-at HEAD` 找分支，最多問 5 個，顯示第一個有 PR 的。沒有分支指向這個 commit 時，這個 session 之前看過、還開著的 PR 照樣留著。
 
+### 從別的資料夾推送時
+
+session 的資料夾停在 `main`，Claude 卻在另一個 worktree 裡 commit、推送、開 PR 時，`gh pr view` 問的是 `main`，找不到那個 PR。所以 Claude 跑完指令後，會看 Claude Code 對這個指令的解讀（推到哪個分支、開了或改了哪個 PR）：
+
+- 開了、改了 PR（`gh pr create`、`gh pr ready`、`gh pr edit` 等）：直接記下這個 PR。
+- 推到某個分支：用 `gh pr view <分支>` 問那個分支的 PR，還開著就記下來。
+
+記下來的 PR 和「換分支後」留著的 PR 一樣，追到合併或關掉為止。在別人的 PR 留言（`gh pr comment`）不會記。
+
 ### 多久讀一次
 
 狀態是用本機的 [`gh`](https://cli.github.com/) 讀的（`gh pr view`），所以要先裝好 `gh` 並登入；沒裝或沒登入，這一段就不顯示。每輪對話結束時會讀一次（最多每分鐘一次）；閒置時 CI 還在跑就每分鐘讀一次，否則每 5 分鐘讀一次。留著的 PR 每次一起讀，一個 PR 跑一次 `gh pr view <網址>`。
 
-Claude 用 Bash 或 PowerShell 跑完 `git push`、`gh pr create`、`gh pr ready`、`gh pr reopen` 後會馬上讀一次，之後 5 分鐘內每分鐘讀一次，等 CI 開始跑。`gh` 一時連不上（網路、GitHub 暫時出錯）時保留上一次的狀態，不會突然消失。
+Claude 用 Bash 或 PowerShell 跑完 `git push`、`gh pr create`、`gh pr ready`、`gh pr reopen`，或其他推送、開 PR 的指令後會馬上讀一次，之後 5 分鐘內每分鐘讀一次，等 CI 開始跑。`gh` 一時連不上（網路、GitHub 暫時出錯）時保留上一次的狀態，不會突然消失。
 
 ## 快取倒數
 
