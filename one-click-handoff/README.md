@@ -14,8 +14,8 @@ Context 用到 70% 時，輸入框上方出現「一鍵交接」按鈕：請模�
 ## 安裝（本機）
 
 ```
-/plugin marketplace add crytropy/one-click-handoff
-/plugin install one-click-handoff@one-click-handoff
+/plugin marketplace add crytropy/claude-code-mods
+/plugin install one-click-handoff@claude-code-mods
 ```
 
 要讓某個 repo 在本機開的 session 自動載入，在那個 repo 的 `.claude/settings.json` 加上：
@@ -23,9 +23,9 @@ Context 用到 70% 時，輸入框上方出現「一鍵交接」按鈕：請模�
 ```json
 {
   "extraKnownMarketplaces": {
-    "one-click-handoff": { "source": { "source": "github", "repo": "crytropy/one-click-handoff" } }
+    "claude-code-mods": { "source": { "source": "github", "repo": "crytropy/claude-code-mods" } }
   },
-  "enabledPlugins": { "one-click-handoff@one-click-handoff": true }
+  "enabledPlugins": { "one-click-handoff@claude-code-mods": true }
 }
 ```
 
@@ -40,15 +40,15 @@ Context 用到 70% 時，輸入框上方出現「一鍵交接」按鈕：請模�
 1. **Setup script** 加上：
 
    ```bash
-   git clone --depth 1 https://github.com/crytropy/one-click-handoff /opt/one-click-handoff
+   git clone --depth 1 https://github.com/crytropy/claude-code-mods /opt/claude-code-mods
    ```
 
 2. **Environment variables** 加上：
 
    ```
-   CLAUDE_CODE_PLUGIN_DIRS=/opt/one-click-handoff
+   CLAUDE_CODE_PLUGIN_DIRS=/opt/claude-code-mods/one-click-handoff
    ```
 
-   如果也裝了 prompt-band，兩個資料夾用 `:` 接在一起（雲端主機是 Linux），例如 `/opt/prompt-band:/opt/one-click-handoff`。
+   如果也要用 windsock，兩個資料夾用 `:` 接在一起（雲端主機是 Linux）：`/opt/claude-code-mods/windsock:/opt/claude-code-mods/one-click-handoff`。
 
 設定好後開一個新的雲端 session，等 Context 用到 70% 時看輸入框上方有沒有出現按鈕。

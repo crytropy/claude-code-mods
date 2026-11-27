@@ -9,7 +9,7 @@ const queueAnswer = (isInMergeQueue: boolean) =>
 const isQueueAsk = (e: any) => e.argv[1] === 'api'
 
 const band = (surface: 'terminal' | 'desktop', bodyColumns = 120) => ({
-  plugin: 'windsock-mod-ultra',
+  plugin: 'windsock',
   surface,
   component: 'AbovePrompt' as const,
   props: {
@@ -65,9 +65,7 @@ test('usage on the left, the cache countdown on the right: the time alone, yello
     const ui = await $.ui.mount(band(surface))
     expect((await ui.find({ type: 'Text', text: /Cloudy/ }))?.text).toBe('☁ Cloudy 30%')
     expect(await ui.find({ type: 'Text', text: '  60k/200k' })).toBeDefined()
-    // An account not yet verified still reports a five-hour window: Ultra leaves it out.
-    expect(await ui.find({ type: 'Text', text: /5h/ })).toBeUndefined()
-    expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week 12%')
+    expect((await ui.find({ type: 'Text', text: /5h/ }))?.text).toBe('5h 85% (resets in 1h30m)')
     expect(await ui.find({ type: 'Text', text: /^\d\d:\d\d$/ })).toBeUndefined()
     expect(await ui.find({ type: 'Text', text: 'beneath' })).toBeDefined()
     await ui.unmount()
@@ -136,11 +134,11 @@ test('usage on the left, the cache countdown on the right: the time alone, yello
   await ui.unmount()
 })
 
-test('Week keeps the last figure across sessions until a measurement brings a new one', async ($, on) => {
+test('5h and Week keep the last figures across sessions until a measurement brings new ones', async ($, on) => {
   const clock = mock.clock(on, { now: T0 })
   // What an earlier session left in the store.
   const store: Record<string, any> = {
-    lastLimits: { weekly: 12, weeklyResetsAt: '2026-10-20T00:00:00Z' },
+    lastLimits: { fiveHour: 40, fiveHourResetsAt: '2026-10-16T11:30:00Z', weekly: 12, weeklyResetsAt: '2026-10-20T00:00:00Z' },
   }
   on('store.get', (_$, e: any) => ({ value: store[e.key] }) as any)
   on('store.set', (_$, e: any) => {
@@ -162,6 +160,7 @@ test('Week keeps the last figure across sessions until a measurement brings a ne
 
   let ui = await $.ui.mount(band('desktop'))
   expect((await ui.find({ type: 'Text', text: /Context/ }))?.text).toBe('Context --')
+  expect((await ui.find({ type: 'Text', text: /5h/ }))?.text).toBe('5h 40% (resets in 1h30m)')
   expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week 12%')
   await ui.unmount()
 
@@ -169,27 +168,28 @@ test('Week keeps the last figure across sessions until a measurement brings a ne
   await $.session.measure({ context: { window: 200000, tokens: 20000, percent: 10 }, rateLimits: [], changed: ['context'] })
   ui = await $.ui.mount(band('desktop'))
   expect((await ui.find({ type: 'Text', text: /Clear/ }))?.text).toBe('☀ Clear 10%')
-  expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week 12%')
+  expect((await ui.find({ type: 'Text', text: /5h/ }))?.text).toBe('5h 40% (resets in 1h30m)')
   await ui.unmount()
 
   await $.session.measure({
     context: { window: 200000, tokens: 20000, percent: 10 },
     rateLimits: [
       { kind: 'five_hour', percentUsed: 47, resetsAt: '2026-10-16T11:30:00Z' },
-      { kind: 'seven_day', percentUsed: 13, resetsAt: '2026-10-16T11:30:00Z' },
+      { kind: 'seven_day', percentUsed: 13, resetsAt: '2026-10-20T00:00:00Z' },
     ],
     changed: ['rateLimits'],
   })
   ui = await $.ui.mount(band('desktop'))
-  expect(await ui.find({ type: 'Text', text: /5h/ })).toBeUndefined()
+  expect((await ui.find({ type: 'Text', text: /5h/ }))?.text).toBe('5h 47% (resets in 1h30m)')
   expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week 13%')
   await ui.unmount()
-  expect(store.lastLimits).toEqual({ weekly: 13, weeklyResetsAt: '2026-10-16T11:30:00Z' })
+  expect(store.lastLimits.fiveHour).toBe(47)
 
-  // Past the weekly reset the kept figure no longer holds.
+  // Past the five-hour reset the kept figure no longer holds.
   await clock.advance(90 * MIN)
   ui = await $.ui.mount(band('desktop'))
-  expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week --')
+  expect((await ui.find({ type: 'Text', text: /5h/ }))?.text).toBe('5h --')
+  expect((await ui.find({ type: 'Text', text: /Week/ }))?.text).toBe('Week 13%')
   await ui.unmount()
 })
 
@@ -224,7 +224,7 @@ test('context reads as Token Weather: the last turn growth, no trend when narrow
   expect(await ui.find({ type: 'Text', text: '  ▲ +80k' })).toBeDefined()
   await ui.unmount()
 
-  ui = await $.ui.mount(band('terminal', 36))
+  ui = await $.ui.mount(band('terminal', 45))
   expect(await ui.find({ type: 'Text', text: /Storm/ })).toBeDefined()
   expect(await ui.find({ type: 'Text', text: /▲/ })).toBeUndefined()
   await ui.unmount()

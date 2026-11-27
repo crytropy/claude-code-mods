@@ -28,7 +28,6 @@ import {
   queueArgv,
   shortTokens,
   trendText,
-  untilText,
 } from './format'
 
 const TTL_MS = 60 * 60 * 1000
@@ -54,12 +53,12 @@ const PR_PUSHED_MS = 5 * 60 * 1000
 // Open pull requests of this session's branches kept on the band after the branch moves on.
 const HELD_MAX = 5
 
-const reading = atom({ plugin: 'windsock-mod', key: 'reading' } as const, null as Reading | null)
-const lastSentAt = atom({ plugin: 'windsock-mod', key: 'lastSentAt' } as const, null as Stamp)
-const warnedFor = atom({ plugin: 'windsock-mod', key: 'warnedFor' } as const, null as Stamp)
-const history = atom({ plugin: 'windsock-mod', key: 'history' } as const, [] as Point[])
-const prs = atom({ plugin: 'windsock-mod', key: 'prs' } as const, [] as Pr[])
-const held = atom({ plugin: 'windsock-mod', key: 'held' } as const, [] as string[])
+const reading = atom({ plugin: 'windsock-ultra', key: 'reading' } as const, null as Reading | null)
+const lastSentAt = atom({ plugin: 'windsock-ultra', key: 'lastSentAt' } as const, null as Stamp)
+const warnedFor = atom({ plugin: 'windsock-ultra', key: 'warnedFor' } as const, null as Stamp)
+const history = atom({ plugin: 'windsock-ultra', key: 'history' } as const, [] as Point[])
+const prs = atom({ plugin: 'windsock-ultra', key: 'prs' } as const, [] as Pr[])
+const held = atom({ plugin: 'windsock-ultra', key: 'held' } as const, [] as string[])
 
 /** A piece of the usage row: its text and how it is painted. */
 type Part = { text: string; color?: string; dim?: boolean; bold?: boolean }
@@ -391,7 +390,6 @@ export const register: Register = on => {
     // Left: usage.
     const now = await $.clock.now()
     const r = current((await read($, reading)) ?? {}, now)
-    const resets = untilText(r.fiveHourResetsAt, now)
     const points = await read($, history)
 
     // Context as Token Weather: forecast, tokens of the window, the last turn's growth.
@@ -409,9 +407,8 @@ export const register: Register = on => {
     const limit = (text: string, percent: number | undefined): Part[] => [
       { text, color: isHot(percent) ? 'error' : undefined, dim: !isHot(percent) },
     ]
-    // Fable's weekly window, before the week, once the account reports one.
+    // Ultra has no five-hour limit. Fable's weekly window comes before the week, once the account reports one.
     const limits = [
-      limit(`5h ${percentText(r.fiveHour)}${resets ? ` (resets in ${resets})` : ''}`, r.fiveHour),
       ...(r.fable !== undefined ? [limit(`${FABLE} ${percentText(r.fable)}`, r.fable)] : []),
       limit(`Week ${percentText(r.weekly)}`, r.weekly),
     ]

@@ -1,19 +1,29 @@
 {
-  "name": "windsock-mod",
+  "name": "claude-code-mods",
   "owner": {
     "name": "crytropy"
   },
-  "description": "輸入框上方的用量、PR 狀態與快取倒數資訊列",
+  "description": "crytropy 的 Claude Code mod：資訊列、output style 切換、一鍵交接",
   "plugins": [
     {
-      "name": "windsock-mod",
+      "name": "windsock",
       "description": "一般方案（Pro、Max）：Context、5 小時、Fable 每週、每週用量，PR 狀態和快取倒數",
-      "source": "./windsock-mod"
+      "source": "./windsock"
     },
     {
-      "name": "windsock-mod-ultra",
+      "name": "windsock-ultra",
       "description": "Ultra 方案：沒有 5 小時限制，只顯示 Context、Fable 每週、每週用量，PR 狀態和快取倒數",
-      "source": "./windsock-mod-ultra"
+      "source": "./windsock-ultra"
+    },
+    {
+      "name": "output-style",
+      "description": "輸入框下方顯示目前的 output style，並用 /style 切換",
+      "source": "./output-style"
+    },
+    {
+      "name": "one-click-handoff",
+      "description": "Context 用到 70% 時，一鍵寫交接文件並開新對話",
+      "source": "./one-click-handoff"
     }
   ]
 }

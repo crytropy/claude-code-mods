@@ -1,5 +1,5 @@
 declare module 'claude-code' {
   interface PluginState {
-    style: { current: string }
+    'output-style': { current: string }
   }
 }

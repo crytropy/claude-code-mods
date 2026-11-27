@@ -1,4 +1,4 @@
-# output-style-mod
+# output-style
 Output style 顯示與切換
 
 輸入框下方那列（`? for shortcuts` 那列）的右邊，用灰字顯示目前的 output style（例如 `ELI5`）。
@@ -11,20 +11,20 @@ Output style 顯示與切換
 在終端機的 Claude Code 裡：
 
 ```
-/plugin marketplace add crytropy/output-style-mod
-/plugin install style@output-style-mod
+/plugin marketplace add crytropy/claude-code-mods
+/plugin install output-style@claude-code-mods
 ```
 
-在桌面版 app：按輸入框旁的 +，選 Plugins，Add marketplace 填 `crytropy/output-style-mod`，再 Add plugin 選 `style`。
+在桌面版 app：按輸入框旁的 +，選 Plugins，Add marketplace 填 `crytropy/claude-code-mods`，再 Add plugin 選 `output-style`。
 
 要讓某個 repo 的 session（含雲端 session）自動載入，在那個 repo 的 `.claude/settings.json` 加上：
 
 ```json
 {
   "extraKnownMarketplaces": {
-    "output-style-mod": { "source": { "source": "github", "repo": "crytropy/output-style-mod" } }
+    "claude-code-mods": { "source": { "source": "github", "repo": "crytropy/claude-code-mods" } }
   },
-  "enabledPlugins": { "style@output-style-mod": true }
+  "enabledPlugins": { "output-style@claude-code-mods": true }
 }
 ```
 
@@ -46,6 +46,6 @@ Output style 顯示與切換
 ## 開發
 
 ```
-claude plugin validate .
-claude plugin test .
+claude plugin validate output-style
+claude plugin test output-style
 ```

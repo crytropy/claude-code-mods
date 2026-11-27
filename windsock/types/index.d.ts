@@ -35,7 +35,7 @@ export type Pr = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'windsock-mod': {
+    'windsock': {
       reading: Reading | null
       /** The last turns' context readings, oldest first. */
       history: Point[]

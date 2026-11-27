@@ -8,6 +8,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## 指令
 
+在 `one-click-handoff/` 資料夾裡執行：
+
 ```bash
 claude plugin validate .   # 用引擎載入的方式檢查 manifest 和 hooks 模組
 claude plugin test .       # 對引擎跑所有 tests/*.test.ts(x)，有測試失敗就回傳 1
@@ -20,7 +22,7 @@ claude --plugin-dir .      # 開一個從這個資料夾載入外掛的 session�
 
 ## 架構
 
-- `.claude-plugin/plugin.json` 是外掛的 manifest。`.claude-plugin/marketplace.json` 讓這個 repo 自己就是只有一個外掛的 marketplace（`source: "./"`）。發新版時要更新 `plugin.json` 的 `version`。
+- `.claude-plugin/plugin.json` 是外掛的 manifest。marketplace 在 repo 根目錄的 `.claude-plugin/marketplace.json`（名稱 `claude-code-mods`），這個外掛的 `source` 是 `./one-click-handoff`。發新版時要更新 `plugin.json` 的 `version`。
 - `hooks/hooks.json` 指向 hooks 模組 `hooks/register.tsx`，所有邏輯都在這裡。模組裡沒有 DOM 或 Node API，一律透過引擎介面 `$` 存取外部（`$.session.usage()`、`$.model.fork`、`$.fs.write`、`$.command.run`、`$.prompt.submit`、`$.ui.toast`、`$.env.get`、`$.clock.now`）。JSX 元件從 `$.ui.resolve(e)` 取得，對應目前要畫的介面。
 - `types/index.d.ts` 是 `$.state` 的型別約定。`register.tsx` 裡每個 `atom({ plugin: 'one-click-handoff', key })` 都要在 `PluginState['one-click-handoff']` 底下宣告，`claude plugin validate` 會檢查。新增狀態值時兩個檔案都要改。
 

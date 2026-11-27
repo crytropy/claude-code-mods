@@ -1,7 +1,7 @@
 import { expect, mock, test } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-const PLUGIN = 'style'
+const PLUGIN = 'output-style'
 const SURFACES = ['terminal', 'desktop'] as const
 const HINT = { isDraft: false, isWorking: false, hint: '? for shortcuts' }
 const START = { cwd: '/project', surface: 'terminal', isInteractive: true } as const

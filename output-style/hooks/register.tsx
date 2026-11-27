@@ -4,7 +4,7 @@ import type { EngineInterface, Register } from 'claude-code'
 const DEFAULT = 'default'
 const BUILT_IN = [DEFAULT, 'Explanatory', 'Learning'] as const
 
-const current = atom({ plugin: 'style', key: 'current' } as const, DEFAULT)
+const current = atom({ plugin: 'output-style', key: 'current' } as const, DEFAULT)
 
 type Engine = EngineInterface
 
